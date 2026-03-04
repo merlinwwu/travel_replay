@@ -1,0 +1,1050 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Someone's traval plan or replay</title>
+    <style>
+        html, body, #container {
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            overflow: hidden;
+            background-color: #050505;
+            font-family: "Microsoft YaHei", sans-serif;
+        }
+        
+        /* 状态显示栏 */
+        #status-panel {
+            position: absolute;
+            top: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(15, 15, 15, 0.9);
+            color: #00ffcc;
+            padding: 15px 40px;
+            border-radius: 40px;
+            box-shadow: 0 0 25px rgba(0, 255, 204, 0.15);
+            border: 1px solid rgba(0, 255, 204, 0.3);
+            backdrop-filter: blur(10px);
+            z-index: 999;
+            text-align: center;
+            min-width: 320px;
+            transition: all 0.3s ease;
+        }
+
+        #status-title { font-size: 13px; color: #888; margin-bottom: 5px; text-transform: uppercase; letter-spacing: 1px; }
+        #status-content { font-size: 18px; font-weight: bold; text-shadow: 0 0 10px rgba(0,255,204,0.3); }
+        .node-label {
+            padding: 2px 8px;
+            border-radius: 12px;
+            border: 1px solid rgba(0, 255, 204, 0.35);
+            background: rgba(8, 8, 8, 0.8);
+            color: #dffeff;
+            font-size: 12px;
+            line-height: 16px;
+            white-space: nowrap;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+        }
+        
+        .amap-logo, .amap-copyright { display: none !important; }
+    </style>
+    
+    <script src="https://webapi.amap.com/loader.js"></script>
+</head>
+<body>
+
+<div id="container"></div>
+
+<div id="status-panel">
+    <div id="status-title">System Status</div>
+    <div id="status-content">正在初始化系统...</div>
+</div>
+
+<script>
+    /**
+     * 核心运行配置。
+     * @type {{
+     *   securityCode: string,
+     *   apiKey: string,
+     *   debug: boolean,
+     *   startDelay: number,
+     *   earthCenter: number[]
+     * }}
+     */
+    const CONFIG = {
+        securityCode: 'CODE',
+        apiKey: 'KEY',
+        debug: false,
+        startDelay: 1800,
+        earthCenter: [105, 35]
+    };
+
+    /**
+     * 图标资源。
+     * @type {{car: string, plane: string, start: string, end: string, waypoint: string}}
+     */
+    const ICONS = {
+        car: 'https://webapi.amap.com/images/car.png',
+        plane: 'data:image/svg+xml;charset=utf-8,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%23FFD700"%3E%3Cpath d="M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z"/%3E%3C/svg%3E',
+        start: 'data:image/svg+xml;charset=utf-8,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36"%3E%3Ccircle cx="18" cy="18" r="16" fill="%2300d084"/%3E%3Ccircle cx="18" cy="18" r="7" fill="white"/%3E%3C/svg%3E',
+        end: 'data:image/svg+xml;charset=utf-8,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36"%3E%3Ccircle cx="18" cy="18" r="16" fill="%23ff4d4f"/%3E%3Cpath d="M11 10h14v16H11z" fill="white"/%3E%3C/svg%3E',
+        waypoint: 'data:image/svg+xml;charset=utf-8,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36"%3E%3Ccircle cx="18" cy="18" r="16" fill="%23ffd666"/%3E%3Ccircle cx="18" cy="18" r="6" fill="%23444"/%3E%3C/svg%3E'
+    };
+
+    /**
+     * 默认模式配置。
+     * @type {{
+     *   drive: {vehicleIcon: string},
+     *   fly: {vehicleIcon: string}
+     * }}
+     */
+    const MODE_DEFAULTS = {
+        drive: { vehicleIcon: ICONS.car },
+        fly: { vehicleIcon: ICONS.plane }
+    };
+
+    /**
+     * 旅行计划配置（支持起终点、任意途径点、每段时长、图标与镜头策略）。
+     * @type {Array<Object>}
+     */
+    const JOURNEY_PLAN = [
+        {
+            id: 'home-tsinghua-drive',
+            type: 'drive',
+            start: { name: '家', position: [116.245057, 39.979927] },
+            end: { name: '体育馆', position: [116.33237, 40.004464] },
+            timing: {
+                travelDuration: 2000,
+                legDurations: [5000, 7000],
+                destinationStay: 500
+            },
+            camera: {
+                intro: { startZoom: 3.2, midZoom: 8.5, endZoom: 16.8, duration: 3600 },
+                drive: { zoom: 13.2, pitch: 58, headingOffset: -90, followAheadMeters: 180, followCenterRatio: 0.1 },
+                fly: { zoom: 9.5, pitchTakeoff: 35, pitchCruise: 52, pitchLanding: 30, headingOffset: 0 }
+            },
+            icons: {
+                vehicle: ICONS.car,
+                start: ICONS.start,
+                end: ICONS.end,
+            }
+        },       
+        {
+            id: 'beijing-fuzhou-fly',
+            type: 'fly',
+            start: { name: '北京大兴机场', position: [116.429172, 39.510561] },
+            end: { name: '福州长乐机场', position: [119.674042, 25.928896] },
+            waypoints: [],
+            timing: {
+                travelDuration: 3000,
+                destinationStay: 500
+            },
+            flight: {
+                pathMode: 'arc',
+                arcHeight: 0.22,
+                pointCount: 96
+            },
+            camera: {
+                intro: { startZoom: 3.2, midZoom: 7.8, endZoom: 8.9, duration: 4000 },
+                drive: { zoom: 17, pitch: 56, headingOffset: -90, followAheadMeters: 180, followCenterRatio: 0.1 },
+                fly: { zoom: 5.4, pitchTakeoff: 32, pitchCruise: 58, pitchLanding: 30, headingOffset: 0 }
+            },
+            icons: {
+                vehicle: ICONS.plane,
+                start: ICONS.start,
+                end: ICONS.end,
+                waypoint: ICONS.waypoint
+            }
+        },
+        {
+            id: 'fuzhou-quanzhou-drive',
+            type: 'drive',
+            start: { name: '福州', position: [119.296623,26.081958] },
+            end: { name: '泉州', position: [118.592796,24.901753] },
+            timing: {
+                travelDuration: 3000,
+                destinationStay: 500
+            },
+            camera: {
+                intro: { startZoom: 3.2, midZoom: 9.2, endZoom: 16.6, duration: 3800 },
+                drive: { zoom: 9.4, pitch: 60, headingOffset: -90, followAheadMeters: 180, followCenterRatio: 0.1 },
+                fly: { zoom: 9, pitchTakeoff: 36, pitchCruise: 52, pitchLanding: 32, headingOffset: 0 }
+            },
+            icons: {
+                vehicle: ICONS.car,
+                start: ICONS.start,
+                end: ICONS.end,
+            }
+        },   
+        {
+            id: 'xiamen-chaozhou-drive',
+            type: 'drive',
+            start: { name: '厦门', position: [118.08891,24.479627] },
+            end: { name: '潮州', position: [116.647995,23.665254] },
+            waypoints: [
+                { name: '漳州古城', position: [117.653739,24.505416] },
+                { name: '初溪土楼', position: [116.905012,24.547131] }
+            ],
+            timing: {
+                travelDuration: 6000,
+                legDurations: [5000, 7000],
+                waypointStay: 500,
+                destinationStay: 500
+            },
+            camera: {
+                intro: { startZoom: 3.2, midZoom: 8.5, endZoom: 16.8, duration: 3600 },
+                drive: { zoom: 10.4, pitch: 58, headingOffset: -90, followAheadMeters: 180, followCenterRatio: 0.1 },
+                fly: { zoom: 9.5, pitchTakeoff: 35, pitchCruise: 52, pitchLanding: 30, headingOffset: 0 }
+            },
+            icons: {
+                vehicle: ICONS.car,
+                start: ICONS.start,
+                end: ICONS.end,
+                waypoint: ICONS.waypoint
+            }
+        }, 
+        {
+            id: 'fuzhou-beijing-fly',
+            type: 'fly',
+            start: { name: '福州长乐机场', position: [119.674042, 25.928896] },
+            end: { name: '北京首都机场', position: [116.594548,40.079904] },
+            timing: {
+                travelDuration: 3000,
+                destinationStay: 500
+            },
+            flight: {
+                pathMode: 'arc',
+                arcHeight: 0.22,
+                pointCount: 96
+            },
+            camera: {
+                intro: { startZoom: 3.2, midZoom: 7.8, endZoom: 8.9, duration: 4000 },
+                drive: { zoom: 17, pitch: 56, headingOffset: -90, followAheadMeters: 180, followCenterRatio: 0.1 },
+                fly: { zoom: 5.4, pitchTakeoff: 32, pitchCruise: 58, pitchLanding: 30, headingOffset: 0 }
+            },
+            icons: {
+                vehicle: ICONS.plane,
+                start: ICONS.start,
+                end: ICONS.end,
+            }
+        }
+    ];
+
+    window._AMapSecurityConfig = { securityJsCode: CONFIG.securityCode };
+
+    let map;
+    let AMapObj;
+    let vehicleMarker;
+    let activePolyline;
+    let nodeMarkers = [];
+
+    /**
+     * 更新顶部状态栏文本。
+     * @param {string} title 标题
+     * @param {string} content 主内容
+     * @param {boolean} [isError=false] 是否错误态
+     * @param {string} [detail=''] 详情文本
+     */
+    function updateUI(title, content, isError = false, detail = '') {
+        const panel = document.getElementById('status-panel');
+        const titleEl = document.getElementById('status-title');
+        const contentEl = document.getElementById('status-content');
+        titleEl.innerText = title;
+        contentEl.innerText = content;
+        contentEl.style.color = isError ? '#ff4444' : '#00ffcc';
+        panel.style.borderColor = isError ? '#ff4444' : 'rgba(0, 255, 204, 0.3)';
+    }
+
+    /**
+     * Promise 版延时。
+     * @param {number} ms 毫秒
+     * @returns {Promise<void>}
+     */
+    function wait(ms) {
+        return new Promise((resolve) => setTimeout(resolve, ms));
+    }
+
+    /**
+     * 高精度等待，尽量降低 setTimeout 调度误差。
+     * @param {number} ms 毫秒
+     * @returns {Promise<void>}
+     */
+    function waitAccurate(ms) {
+        const target = Math.max(0, Number(ms) || 0);
+        if (target === 0) {
+            return Promise.resolve();
+        }
+        return new Promise((resolve) => {
+            const startAt = performance.now();
+            const tick = () => {
+                if (performance.now() - startAt >= target) {
+                    resolve();
+                    return;
+                }
+                requestAnimationFrame(tick);
+            };
+            requestAnimationFrame(tick);
+        });
+    }
+
+    /**
+     * 判断是否为合法经纬度坐标。
+     * @param {unknown} value 输入值
+     * @returns {boolean}
+     */
+    function isLngLat(value) {
+        return Array.isArray(value)
+            && value.length === 2
+            && Number.isFinite(value[0])
+            && Number.isFinite(value[1])
+            && value[0] >= -180
+            && value[0] <= 180
+            && value[1] >= -90
+            && value[1] <= 90;
+    }
+
+    /**
+     * 将多种坐标格式转换为标准 [lng, lat] 数组。
+     * 兼容 AMap.LngLat 对象、{lng,lat} 对象与数组坐标。
+     * @param {any} point 原始坐标
+     * @returns {number[]|null}
+     */
+    function toLngLatTuple(point) {
+        if (Array.isArray(point) && point.length >= 2) {
+            const lng = Number(point[0]);
+            const lat = Number(point[1]);
+            return Number.isFinite(lng) && Number.isFinite(lat) ? [lng, lat] : null;
+        }
+        if (point && typeof point.getLng === 'function' && typeof point.getLat === 'function') {
+            const lng = Number(point.getLng());
+            const lat = Number(point.getLat());
+            return Number.isFinite(lng) && Number.isFinite(lat) ? [lng, lat] : null;
+        }
+        if (point && Number.isFinite(Number(point.lng)) && Number.isFinite(Number(point.lat))) {
+            return [Number(point.lng), Number(point.lat)];
+        }
+        return null;
+    }
+
+    /**
+     * 打印调试日志。
+     * @param {...any} args 日志参数
+     */
+    function logDebug(...args) {
+        if (CONFIG.debug) {
+            console.log('[TravelDebug]', ...args);
+        }
+    }
+
+    /**
+     * 对文本做 HTML 转义，避免标签注入。
+     * @param {string} text 原始文本
+     * @returns {string}
+     */
+    function escapeHtml(text) {
+        return String(text)
+            .replaceAll('&', '&amp;')
+            .replaceAll('<', '&lt;')
+            .replaceAll('>', '&gt;')
+            .replaceAll('"', '&quot;')
+            .replaceAll("'", '&#39;');
+    }
+
+    /**
+     * 清理当前段覆盖物。
+     */
+    function clearJourneyOverlays() {
+        if (vehicleMarker) {
+            vehicleMarker.stopMove();
+            map.remove(vehicleMarker);
+            vehicleMarker = null;
+        }
+        if (activePolyline) {
+            map.remove(activePolyline);
+            activePolyline = null;
+        }
+        if (nodeMarkers.length) {
+            map.remove(nodeMarkers);
+            nodeMarkers = [];
+        }
+    }
+
+    /**
+     * 校验并标准化计划配置。
+     * @param {Object} raw 原始段配置
+     * @param {number} index 段序号
+     * @returns {Object|null}
+     */
+    function normalizePlan(raw, index) {
+        if (!raw || (raw.type !== 'drive' && raw.type !== 'fly')) {
+            console.warn('无效行程类型，已跳过', raw);
+            return null;
+        }
+        if (!raw.start || !raw.end || !isLngLat(raw.start.position) || !isLngLat(raw.end.position)) {
+            console.warn('起终点坐标不合法，已跳过', raw);
+            return null;
+        }
+
+        const waypoints = Array.isArray(raw.waypoints)
+            ? raw.waypoints.filter((point) => point && isLngLat(point.position))
+            : [];
+        const timing = raw.timing || {};
+        const travelDuration = Math.max(1000, Number(timing.travelDuration) || 10000);
+        const waypointStay = Math.max(0, Number(timing.waypointStay) || 0);
+        const destinationStay = Math.max(0, Number(timing.destinationStay) || 2000);
+        const legDurations = Array.isArray(timing.legDurations) ? timing.legDurations : [];
+
+        const camera = raw.camera || {};
+        const intro = camera.intro || {};
+        const driveCamera = camera.drive || {};
+        const flyCamera = camera.fly || {};
+        const icons = raw.icons || {};
+        const modeDefaults = MODE_DEFAULTS[raw.type] || MODE_DEFAULTS.drive;
+
+        return {
+            id: raw.id || `segment-${index + 1}`,
+            type: raw.type,
+            start: raw.start,
+            end: raw.end,
+            waypoints,
+            timing: {
+                travelDuration,
+                waypointStay,
+                destinationStay,
+                legDurations
+            },
+            camera: {
+                intro: {
+                    startZoom: Number(intro.startZoom) || 3.2,
+                    midZoom: Number(intro.midZoom) || (raw.type === 'drive' ? 8.8 : 8.0),
+                    endZoom: Number(intro.endZoom) || (raw.type === 'drive' ? 16.8 : 9.0),
+                    duration: Math.max(1000, Number(intro.duration) || 3600)
+                },
+                drive: {
+                    zoom: Number(driveCamera.zoom) || 17,
+                    pitch: Number(driveCamera.pitch) || 58,
+                    headingOffset: Number.isFinite(Number(driveCamera.headingOffset))
+                        ? Number(driveCamera.headingOffset)
+                        : -90,
+                    followAheadMeters: Number.isFinite(Number(driveCamera.followAheadMeters))
+                        ? Math.max(20, Number(driveCamera.followAheadMeters))
+                        : 260,
+                    followCenterRatio: Number.isFinite(Number(driveCamera.followCenterRatio))
+                        ? Math.max(0, Math.min(1, Number(driveCamera.followCenterRatio)))
+                        : 0.18
+                },
+                fly: {
+                    zoom: Number(flyCamera.zoom) || 8.6,
+                    pitchTakeoff: Number(flyCamera.pitchTakeoff) || 34,
+                    pitchCruise: Number(flyCamera.pitchCruise) || 56,
+                    pitchLanding: Number(flyCamera.pitchLanding) || 30,
+                    headingOffset: Number.isFinite(Number(flyCamera.headingOffset))
+                        ? Number(flyCamera.headingOffset)
+                        : 0
+                }
+            },
+            flight: {
+                pathMode: raw.flight && raw.flight.pathMode === 'straight' ? 'straight' : 'arc',
+                arcHeight: Number(raw.flight && raw.flight.arcHeight) || 0.2,
+                pointCount: Math.max(16, Number(raw.flight && raw.flight.pointCount) || 80)
+            },
+            icons: {
+                vehicle: icons.vehicle || modeDefaults.vehicleIcon,
+                start: icons.start || ICONS.start,
+                end: icons.end || ICONS.end,
+                waypoint: icons.waypoint || ICONS.waypoint
+            }
+        };
+    }
+
+    /**
+     * 获取所有节点坐标（起点 -> 途径点 -> 终点）。
+     * @param {Object} plan 行程段
+     * @returns {number[][]}
+     */
+    function getNodePositions(plan) {
+        return [
+            plan.start.position,
+            ...plan.waypoints.map((point) => point.position),
+            plan.end.position
+        ];
+    }
+
+    /**
+     * 渲染起终点和途径点图标。
+     * @param {Object} plan 行程段
+     */
+    function renderNodeMarkers(plan) {
+        const markers = [];
+        markers.push(createNodeMarker(plan.start.position, plan.start.name, plan.icons.start));
+        plan.waypoints.forEach((point, index) => {
+            markers.push(createNodeMarker(point.position, `途径点${index + 1}：${point.name}`, plan.icons.waypoint));
+        });
+        markers.push(createNodeMarker(plan.end.position, plan.end.name, plan.icons.end));
+        nodeMarkers = markers;
+        map.add(nodeMarkers);
+    }
+
+    /**
+     * 创建节点标记。
+     * @param {number[]} position 坐标
+     * @param {string} title 名称
+     * @param {string} image 图标地址
+     * @returns {AMap.Marker}
+     */
+    function createNodeMarker(position, title, image) {
+        return new AMapObj.Marker({
+            position,
+            title,
+            icon: new AMapObj.Icon({
+                size: new AMapObj.Size(34, 34),
+                image,
+                imageSize: new AMapObj.Size(28, 28)
+            }),
+            offset: new AMapObj.Pixel(-17, -17),
+            zIndex: 90,
+            label: {
+                content: `<div class="node-label">${escapeHtml(title)}</div>`,
+                direction: 'right',
+                offset: new AMapObj.Pixel(10, -2)
+            }
+        });
+    }
+
+    /**
+     * 创建交通工具标记。
+     * @param {Object} plan 行程段
+     * @returns {AMap.Marker}
+     */
+    function createVehicleMarker(plan) {
+        const isDrive = plan.type === 'drive';
+        const iconWidth = isDrive ? 58 : 52;
+        const iconHeight = isDrive ? 36 : 52;
+        const imageWidth = isDrive ? 54 : 40;
+        const imageHeight = isDrive ? 34 : 40;
+        return new AMapObj.Marker({
+            map,
+            position: plan.start.position,
+            icon: new AMapObj.Icon({
+                size: new AMapObj.Size(iconWidth, iconHeight),
+                image: plan.icons.vehicle,
+                imageSize: new AMapObj.Size(imageWidth, imageHeight)
+            }),
+            offset: new AMapObj.Pixel(-Math.round(iconWidth / 2), -Math.round(iconHeight / 2)),
+            zIndex: 220
+        });
+    }
+
+    /**
+     * Earth 风格进场镜头：从高空缩放到本段起点。
+     * @param {Object} plan 行程段
+     */
+    async function playIntroCamera(plan) {
+        const intro = plan.camera.intro;
+        map.setRotation(0);
+        map.setPitch(0);
+        map.setZoomAndCenter(intro.startZoom, CONFIG.earthCenter, false, 0);
+        await wait(180);
+        map.setZoomAndCenter(intro.midZoom, plan.start.position, false, Math.round(intro.duration * 0.45));
+        await wait(Math.round(intro.duration * 0.45) + 120);
+        const targetPitch = plan.type === 'drive' ? plan.camera.drive.pitch : plan.camera.fly.pitchTakeoff;
+        map.setPitch(targetPitch);
+        map.setZoomAndCenter(intro.endZoom, plan.start.position, false, Math.round(intro.duration * 0.55));
+        await wait(Math.round(intro.duration * 0.55) + 150);
+    }
+
+    /**
+     * 计算球面距离（米）。
+     * @param {number[]} a 坐标A
+     * @param {number[]} b 坐标B
+     * @returns {number}
+     */
+    function getDistanceMeters(a, b) {
+        const from = toLngLatTuple(a);
+        const to = toLngLatTuple(b);
+        if (!from || !to) return 0;
+        const rad = Math.PI / 180;
+        const dLat = (to[1] - from[1]) * rad;
+        const dLng = (to[0] - from[0]) * rad;
+        const lat1 = from[1] * rad;
+        const lat2 = to[1] * rad;
+        const k = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+        return 6378137 * 2 * Math.atan2(Math.sqrt(k), Math.sqrt(1 - k));
+    }
+
+    /**
+     * 计算路径长度（米）。
+     * @param {number[][]} path 路径点
+     * @returns {number}
+     */
+    function getPathDistance(path) {
+        let sum = 0;
+        for (let i = 1; i < path.length; i++) {
+            sum += getDistanceMeters(path[i - 1], path[i]);
+        }
+        return sum;
+    }
+
+    /**
+     * 路径点线性插值。
+     * @param {number[]} from 起点
+     * @param {number[]} to 终点
+     * @param {number} ratio 比例
+     * @returns {number[]}
+     */
+    function mixPoint(from, to, ratio) {
+        const fromTuple = toLngLatTuple(from);
+        const toTuple = toLngLatTuple(to);
+        if (!fromTuple || !toTuple) {
+            return toLngLatTuple(from) || toLngLatTuple(to) || [105, 35];
+        }
+        const mixed = [
+            fromTuple[0] + (toTuple[0] - fromTuple[0]) * ratio,
+            fromTuple[1] + (toTuple[1] - fromTuple[1]) * ratio
+        ];
+        return mixed;
+    }
+
+    /**
+     * 计算从 from 指向 to 的航向角（0-360，正北为0，顺时针）。
+     * @param {number[]|Object} from 起点
+     * @param {number[]|Object} to 终点
+     * @returns {number}
+     */
+    function getHeadingDegrees(from, to) {
+        const fromTuple = toLngLatTuple(from);
+        const toTuple = toLngLatTuple(to);
+        if (!fromTuple || !toTuple) return 0;
+        const rad = Math.PI / 180;
+        const lat1 = fromTuple[1] * rad;
+        const lat2 = toTuple[1] * rad;
+        const dLng = (toTuple[0] - fromTuple[0]) * rad;
+        const y = Math.sin(dLng) * Math.cos(lat2);
+        const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLng);
+        return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+    }
+
+    /**
+     * 基于屏幕投影坐标计算可视航向角，保证机头与屏幕路径切线一致。
+     * @param {number[]|Object} from 起点
+     * @param {number[]|Object} to 终点
+     * @returns {number}
+     */
+    function getVisualHeadingDegrees(from, to) {
+        const fromTuple = toLngLatTuple(from);
+        const toTuple = toLngLatTuple(to);
+        if (!fromTuple || !toTuple || !map || typeof map.lngLatToContainer !== 'function') {
+            return getHeadingDegrees(from, to);
+        }
+        const p1 = map.lngLatToContainer(fromTuple);
+        const p2 = map.lngLatToContainer(toTuple);
+        if (!p1 || !p2 || !Number.isFinite(p1.x) || !Number.isFinite(p1.y) || !Number.isFinite(p2.x) || !Number.isFinite(p2.y)) {
+            return getHeadingDegrees(from, to);
+        }
+        const dx = p2.x - p1.x;
+        const dy = p2.y - p1.y;
+        return (Math.atan2(dx, -dy) * 180 / Math.PI + 360) % 360;
+    }
+
+    /**
+     * 规划驾车子段路径（每一段默认取第1条路线）。
+     * @param {number[]} start 起点
+     * @param {number[]} end 终点
+     * @returns {Promise<number[][]>}
+     */
+    function getDrivingLegPath(start, end) {
+        return new Promise((resolve) => {
+            const driving = new AMapObj.Driving({ policy: AMapObj.DrivingPolicy.LEAST_TIME });
+            driving.search(start, end, (status, result) => {
+                if (status === 'complete' && result && result.routes && result.routes.length) {
+                    const route = result.routes[0];
+                    const steps = Array.isArray(route.steps) ? route.steps : [];
+                    const path = [];
+                    steps.forEach((step) => {
+                        if (Array.isArray(step.path)) {
+                            step.path.forEach((point) => {
+                                const tuple = toLngLatTuple(point);
+                                if (tuple) {
+                                    path.push(tuple);
+                                }
+                            });
+                        }
+                    });
+                    if (path.length >= 2) {
+                        resolve(path);
+                        return;
+                    }
+                }
+                resolve([start, end]);
+            });
+        });
+    }
+
+    /**
+     * 构建飞行路径（支持直线与弧线）。
+     * @param {number[]} start 起点
+     * @param {number[]} end 终点
+     * @param {{pathMode: string, arcHeight: number, pointCount: number}} flight 飞行参数
+     * @returns {number[][]}
+     */
+    function buildFlightLegPath(start, end, flight) {
+        if (flight.pathMode === 'straight') {
+            return [start, end];
+        }
+        const points = [];
+        const dx = end[0] - start[0];
+        const dy = end[1] - start[1];
+        const baseLen = Math.hypot(dx, dy) || 1;
+        const nx = -dy / baseLen;
+        const ny = dx / baseLen;
+        const bend = baseLen * Math.max(0.01, flight.arcHeight);
+        for (let i = 0; i <= flight.pointCount; i++) {
+            const t = i / flight.pointCount;
+            const arc = Math.sin(Math.PI * t) * bend;
+            points.push([
+                start[0] + dx * t + nx * arc,
+                start[1] + dy * t + ny * arc
+            ]);
+        }
+        return points;
+    }
+
+    /**
+     * 合并多段路径为单条展示路径。
+     * @param {Array<number[][]>} legPaths 子段路径
+     * @returns {number[][]}
+     */
+    function mergeLegPaths(legPaths) {
+        const fullPath = [];
+        legPaths.forEach((leg, index) => {
+            if (!Array.isArray(leg) || leg.length === 0) return;
+            if (index === 0) {
+                fullPath.push(...leg);
+            } else {
+                fullPath.push(...leg.slice(1));
+            }
+        });
+        return fullPath;
+    }
+
+    /**
+     * 计算每段执行时长，支持自定义或按距离分配。
+     * @param {number} totalDuration 总时长
+     * @param {Array<number[][]>} legPaths 子段路径
+     * @param {number[]} configured 用户配置子段时长
+     * @returns {number[]}
+     */
+    function resolveLegDurations(totalDuration, legPaths, configured) {
+        const legCount = legPaths.length;
+        if (legCount === 0) return [];
+        if (Array.isArray(configured) && configured.length === legCount && configured.every((v) => Number(v) > 0)) {
+            const sum = configured.reduce((acc, num) => acc + Number(num), 0);
+            return configured.map((num, idx) => {
+                if (idx === legCount - 1) {
+                    const used = configured.slice(0, idx).reduce((acc, item) => acc + Math.max(300, Math.round((Number(item) / sum) * totalDuration)), 0);
+                    return Math.max(300, totalDuration - used);
+                }
+                return Math.max(300, Math.round((Number(num) / sum) * totalDuration));
+            });
+        }
+        const distances = legPaths.map((leg) => Math.max(1, getPathDistance(leg)));
+        const totalDistance = distances.reduce((acc, n) => acc + n, 0);
+        const durations = distances.map((dist, index) => {
+            if (index === legCount - 1) return 0;
+            return Math.max(300, Math.round((dist / totalDistance) * totalDuration));
+        });
+        const used = durations.slice(0, -1).reduce((acc, n) => acc + n, 0);
+        durations[legCount - 1] = Math.max(300, totalDuration - used);
+        return durations;
+    }
+
+    /**
+     * 构建某段任务的所有轨迹信息。
+     * @param {Object} plan 行程段
+     * @returns {Promise<{legPaths: Array<number[][]>, fullPath: number[][], legDurations: number[]}>}
+     */
+    async function buildRouteData(plan) {
+        const nodes = getNodePositions(plan);
+        const legPaths = [];
+        for (let i = 0; i < nodes.length - 1; i++) {
+            if (plan.type === 'drive') {
+                const leg = await getDrivingLegPath(nodes[i], nodes[i + 1]);
+                legPaths.push(leg);
+            } else {
+                legPaths.push(buildFlightLegPath(nodes[i], nodes[i + 1], plan.flight));
+            }
+        }
+        const fullPath = mergeLegPaths(legPaths);
+        // drive 模式统一按距离分配每段时长，保证各子段速度一致（米/秒一致）。
+        const durationHints = plan.type === 'drive' ? [] : plan.timing.legDurations;
+        const legDurations = resolveLegDurations(plan.timing.travelDuration, legPaths, durationHints);
+        return { legPaths, fullPath, legDurations };
+    }
+
+    /**
+     * 应用驾车镜头（地面视角）。
+     * @param {number[]} center 中心点
+     * @param {number} heading 航向角
+     * @param {{headingOffset:number}} driveCamera 驾车镜头参数
+     */
+    function applyDriveCamera(center, marker, heading, driveCamera) {
+        map.setCenter(center);
+        // 保持北向上，避免地图旋转与车辆旋转叠加导致车头视觉偏差。
+        map.setRotation(0);
+        if (marker && typeof marker.setAngle === 'function') {
+            marker.setAngle(heading + driveCamera.headingOffset);
+        }
+    }
+
+    /**
+     * 应用飞行镜头（空中视角，包含起降俯仰变化）。
+     * @param {number[]} center 中心点
+     * @param {number} rotation 旋转角
+     * @param {{zoom:number,pitchTakeoff:number,pitchCruise:number,pitchLanding:number}} flyCamera 飞行镜头参数
+     * @param {number} progress 当前子段进度
+     */
+    function applyFlyCamera(center, rotation, flyCamera, progress) {
+        let pitch = flyCamera.pitchCruise;
+        if (progress < 0.2) {
+            pitch = flyCamera.pitchTakeoff + (flyCamera.pitchCruise - flyCamera.pitchTakeoff) * (progress / 0.2);
+        } else if (progress > 0.8) {
+            pitch = flyCamera.pitchLanding + (flyCamera.pitchCruise - flyCamera.pitchLanding) * ((1 - progress) / 0.2);
+        }
+        map.setCenter(center);
+        map.setZoom(flyCamera.zoom);
+        map.setPitch(Math.max(0, Math.min(83, pitch)));
+        // 飞行阶段保持北向上，避免地图旋转与机头角度叠加造成视觉偏航。
+        map.setRotation(0);
+    }
+
+    /**
+     * 构建路径度量信息，用于按时间精确推进动画。
+     * @param {Array<number[]|Object>} rawPath 原始路径点
+     * @returns {{points:number[][], cumulative:number[], total:number}|null}
+     */
+    function buildPathMetrics(rawPath) {
+        if (!Array.isArray(rawPath)) return null;
+        const points = rawPath
+            .map((point) => toLngLatTuple(point))
+            .filter(Boolean);
+        if (points.length < 2) return null;
+        const cumulative = [0];
+        let total = 0;
+        for (let i = 1; i < points.length; i++) {
+            total += getDistanceMeters(points[i - 1], points[i]);
+            cumulative.push(total);
+        }
+        return { points, cumulative, total: Math.max(1, total) };
+    }
+
+    /**
+     * 在指定累计距离上采样位置与航向。
+     * @param {{points:number[][], cumulative:number[], total:number}} metrics 路径度量
+     * @param {number} distance 已行进距离（米）
+     * @returns {{point:number[], heading:number}}
+     */
+    function samplePointByDistance(metrics, distance) {
+        const d = Math.max(0, Math.min(metrics.total, distance));
+        let segmentIndex = metrics.cumulative.length - 2;
+        for (let i = 1; i < metrics.cumulative.length; i++) {
+            if (metrics.cumulative[i] >= d) {
+                segmentIndex = i - 1;
+                break;
+            }
+        }
+        const start = metrics.points[segmentIndex];
+        const end = metrics.points[Math.min(metrics.points.length - 1, segmentIndex + 1)];
+        const segmentStart = metrics.cumulative[segmentIndex];
+        const segmentEnd = metrics.cumulative[segmentIndex + 1];
+        const segmentLength = Math.max(1e-6, segmentEnd - segmentStart);
+        const ratio = Math.max(0, Math.min(1, (d - segmentStart) / segmentLength));
+        return {
+            point: mixPoint(start, end, ratio),
+            heading: getHeadingDegrees(start, end)
+        };
+    }
+
+    /**
+     * 执行单子段动画。
+     * @param {AMap.Marker} marker 交通工具标记
+     * @param {number[][]} path 子段轨迹
+     * @param {number} duration 子段时长
+     * @param {Object} plan 行程段
+     * @returns {Promise<void>}
+     */
+    function executeLegMove(marker, path, duration, plan) {
+        return new Promise((resolve) => {
+            const safeDuration = Math.max(300, duration);
+            const metrics = buildPathMetrics(path);
+            if (!metrics) {
+                resolve();
+                return;
+            }
+            if (plan.type === 'drive') {
+                map.setZoom(plan.camera.drive.zoom);
+                map.setPitch(plan.camera.drive.pitch);
+                map.setRotation(0);
+            } else {
+                map.setZoom(plan.camera.fly.zoom);
+            }
+            marker.setPosition(metrics.points[0]);
+
+            const startAt = performance.now();
+            const tick = (now) => {
+                const elapsed = now - startAt;
+                const progress = Math.max(0, Math.min(1, elapsed / safeDuration));
+                const traveled = metrics.total * progress;
+                const currentSample = samplePointByDistance(metrics, traveled);
+                const aheadMeters = plan.type === 'drive'
+                    ? plan.camera.drive.followAheadMeters
+                    : Math.max(80, metrics.total * 0.02);
+                const lookAheadSample = samplePointByDistance(metrics, Math.min(metrics.total, traveled + aheadMeters));
+                const centerRatio = plan.type === 'drive'
+                    ? plan.camera.drive.followCenterRatio
+                    : 0.45;
+                const center = mixPoint(currentSample.point, lookAheadSample.point, centerRatio);
+                const visualHeading = getVisualHeadingDegrees(currentSample.point, lookAheadSample.point);
+
+                marker.setPosition(currentSample.point);
+                if (plan.type === 'drive') {
+                    applyDriveCamera(center, marker, currentSample.heading, plan.camera.drive);
+                } else {
+                    if (typeof marker.setAngle === 'function') {
+                        marker.setAngle(visualHeading + plan.camera.fly.headingOffset);
+                    }
+                    applyFlyCamera(center, visualHeading, plan.camera.fly, progress);
+                }
+
+                if (progress < 1) {
+                    requestAnimationFrame(tick);
+                    return;
+                }
+                marker.setPosition(metrics.points[metrics.points.length - 1]);
+                resolve();
+            };
+            requestAnimationFrame(tick);
+        });
+    }
+
+    /**
+     * 执行整段行程动画（支持每一子段时长）。
+     * @param {Object} plan 行程段
+     * @param {{legPaths:Array<number[][]>,legDurations:number[]}} routeData 路径数据
+     * @param {number} segmentIndex 当前段索引
+     * @param {number} segmentTotal 总段数
+     */
+    async function executeJourney(plan, routeData, segmentIndex, segmentTotal) {
+        const totalLegCount = routeData.legPaths.length;
+        const travelStartAt = performance.now();
+        const waypointPause = Math.max(0, Number(plan.timing.waypointStay) || 0);
+        for (let i = 0; i < totalLegCount; i++) {
+            const legPath = routeData.legPaths[i];
+            const plannedLegDuration = routeData.legDurations[i];
+            const elapsedTravel = performance.now() - travelStartAt;
+            const remainingLegs = totalLegCount - i;
+            const remainingPauses = Math.max(0, remainingLegs - 1) * waypointPause;
+            const remainingBudget = Math.max(300, plan.timing.travelDuration - elapsedTravel - remainingPauses);
+            const remainingPlanned = routeData.legDurations
+                .slice(i)
+                .reduce((acc, val) => acc + Math.max(1, val), 0);
+            const legDuration = i === totalLegCount - 1
+                ? remainingBudget
+                : Math.max(300, Math.round(remainingBudget * (Math.max(1, plannedLegDuration) / remainingPlanned)));
+            const modeText = plan.type === 'drive' ? '地面驾驶' : '空中飞行';
+            updateUI(
+                plan.type === 'drive' ? '驾车中' : '飞行中',
+                `${plan.start.name} -> ${plan.end.name}`,
+                false,
+                `段 ${segmentIndex + 1}/${segmentTotal} | 子段 ${i + 1}/${totalLegCount} | 模式：${modeText} | 时长：${Math.round(legDuration / 1000)}s`
+            );
+            await executeLegMove(vehicleMarker, legPath, legDuration, plan);
+
+            if (i < totalLegCount - 1 && waypointPause > 0) {
+                const waypoint = plan.waypoints[i];
+                updateUI('途径点停留', `到达 ${waypoint ? waypoint.name : '途径点'}，等待中...`, false, `等待 ${Math.round(waypointPause / 1000)}s`);
+                await waitAccurate(waypointPause);
+            }
+        }
+    }
+
+    /**
+     * 绘制整段路线。
+     * @param {Object} plan 行程段
+     * @param {number[][]} fullPath 路径
+     */
+    function drawRoute(plan, fullPath) {
+        activePolyline = new AMapObj.Polyline({
+            map,
+            path: fullPath,
+            strokeColor: plan.type === 'drive' ? '#4e9df5' : '#ffd700',
+            strokeWeight: 6,
+            strokeOpacity: 0.82,
+            zIndex: 60
+        });
+    }
+
+    /**
+     * 主流程：按顺序执行所有行程段。
+     */
+    async function runSequence() {
+        const plans = JOURNEY_PLAN.map(normalizePlan).filter(Boolean);
+        if (!plans.length) {
+            updateUI('系统错误', '没有可执行的行程配置', true);
+            return;
+        }
+        for (let i = 0; i < plans.length; i++) {
+            const plan = plans[i];
+            clearJourneyOverlays();
+            renderNodeMarkers(plan);
+            updateUI('视角准备', `正在切入起点：${plan.start.name}`, false, `段 ${i + 1}/${plans.length}`);
+            await playIntroCamera(plan);
+            updateUI('路径规划', '正在计算轨迹...', false, `段 ${i + 1}/${plans.length}`);
+            const routeData = await buildRouteData(plan);
+            if (!routeData.fullPath.length) {
+                updateUI('警告', `无法生成 ${plan.start.name} 到 ${plan.end.name} 的路径，已跳过`, true);
+                continue;
+            }
+            drawRoute(plan, routeData.fullPath);
+            vehicleMarker = createVehicleMarker(plan);
+            await executeJourney(plan, routeData, i, plans.length);
+            updateUI('抵达', `到达 ${plan.end.name}，目的地停留中...`, false, `等待 ${Math.round(plan.timing.destinationStay / 1000)}s`);
+            await wait(plan.timing.destinationStay);
+            logDebug('Segment done', plan.id, routeData.legDurations);
+        }
+        clearJourneyOverlays();
+        updateUI('行程结束', '行程收官，返回北京');
+        map.setRotation(0);
+        map.setPitch(0);
+        map.setZoomAndCenter(3.8, CONFIG.earthCenter, false, 3200);
+    }
+
+    AMapLoader.load({
+        key: CONFIG.apiKey,
+        version: '2.0',
+        plugins: ['AMap.Driving', 'AMap.MoveAnimation', 'AMap.ToolBar', 'AMap.TileLayer.Satellite']
+    }).then((AMap) => {
+        AMapObj = AMap;
+        map = new AMapObj.Map('container', {
+            viewMode: '3D',
+            zoom: 3.2,
+            center: CONFIG.earthCenter,
+            pitch: 0,
+            mapStyle: 'amap://styles/dark'
+        });
+        const satellite = new AMapObj.TileLayer.Satellite();
+        map.add(satellite);
+        updateUI('系统就绪', '正在准备假期计划...');
+        setTimeout(() => {
+            runSequence().catch((error) => {
+                console.error(error);
+                updateUI('系统错误', '执行中断，请检查控制台日志', true);
+            });
+        }, CONFIG.startDelay);
+    }).catch((error) => {
+        console.error(error);
+        updateUI('系统错误', '地图加载失败，请检查 Key 与安全密钥配置', true);
+    });
+</script>
+</body>
+</html>
